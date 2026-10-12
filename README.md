@@ -1,5 +1,8 @@
 # neb-ml-kmc-autoflow
 
+[![ci](https://github.com/niwa414/neb-ml-kmc-autoflow/actions/workflows/ci.yml/badge.svg)](https://github.com/niwa414/neb-ml-kmc-autoflow/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Automate the **LAMMPS NEB → machine-learning barrier model → KMC deployment**
 pipeline for atomistic alloy-diffusion simulations. Built around a
 `campaign.json` state machine: every stage is idempotent, resumable, and
