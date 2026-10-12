@@ -41,13 +41,15 @@ jobs:
             python=3.11
             lammps
       - name: show lammps binaries
-        run: ls -la "$CONDA_PREFIX/bin/" | grep -E 'lmp|mpi' || true
-      - name: run the LJ demo end-to-end
+        run: micromamba run -n ci bash -lc 'ls -la "$CONDA_PREFIX/bin/" | grep -E "lmp|mpi" || true'
+      - name: locate lmp inside the env
         run: |
-          set -e
-          LMP="$CONDA_PREFIX/bin/lmp"
-          test -x "$LMP" || LMP="$CONDA_PREFIX/bin/lmp_mpi"
-          micromamba run -n ci python examples/lj_demo/run_demo.py --lmp "$LMP"
+          LMP=$(micromamba run -n ci bash -lc 'command -v lmp || command -v lmp_mpi')
+          test -n "$LMP" || { echo "no lmp binary in env"; exit 1; }
+          echo "LMP=$LMP" >> "$GITHUB_ENV"
+          echo "found: $LMP"
+      - name: run the LJ demo end-to-end
+        run: micromamba run -n ci python examples/lj_demo/run_demo.py --lmp "$LMP"
       - name: assert neb.txt contract
         run: |
           set -e
