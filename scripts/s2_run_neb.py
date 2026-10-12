@@ -179,6 +179,21 @@ def write_neb_txt(workdir: Path, energies: list[float]) -> float:
     return max(e - e0 for e in energies)
 
 
+def _mpiexec_oversubscribe_flag(mpiexec: Path) -> list[str]:
+    """Probe the MPI implementation: Open MPI needs --oversubscribe on hosts
+    that under-report slots (notably macOS); MPICH/Hydra rejects unknown flags.
+    Returns the flag list to prepend (possibly empty). Never guesses."""
+    try:
+        proc = subprocess.run([str(mpiexec), "--version"],
+                              capture_output=True, text=True, timeout=30)
+        banner = (proc.stdout + proc.stderr).lower()
+    except (OSError, subprocess.TimeoutExpired):
+        return []  # cannot probe → safest is no extra flags
+    if "open mpi" in banner or "openmpi" in banner:
+        return ["--oversubscribe"]
+    return []  # MPICH/Hydra and unknown implementations: no extra flags
+
+
 def run_one(task: dict, lmp_path: Path, n_images: int, timeout: int,
             dry_run: bool) -> tuple[bool, str]:
     wd = Path(task["workdir"])
@@ -211,7 +226,8 @@ def run_one(task: dict, lmp_path: Path, n_images: int, timeout: int,
     lmp_mpi = lmp_path.parent / ("lmp_mpi" if lmp_path.name != "lmp_mpi" else "lmp_mpi")
     mpiexec = lmp_path.parent / "mpiexec"
     if lmp_mpi.is_file() and mpiexec.is_file():
-        neb_cmd = [str(mpiexec), "--oversubscribe", "-np", str(n_images),
+        mpi_flags = _mpiexec_oversubscribe_flag(mpiexec)
+        neb_cmd = [str(mpiexec), *mpi_flags, "-np", str(n_images),
                    str(lmp_mpi), "-partition", f"{n_images}x1", "-in", "in.neb"]
     else:
         # single-process fallback: lmp can run NEB in serial with 1 replica only
