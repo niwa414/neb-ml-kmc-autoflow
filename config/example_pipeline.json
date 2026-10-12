@@ -1,0 +1,20 @@
+{
+  "name": "example_mo_re_ga",
+  "species": ["Mo", "Re", "Ga"],
+  "kinds": ["vacancy"],
+  "concs": ["Re_0.05"],
+  "per_cell": 5,
+  "lmp_path": "/ABS/PATH/TO/lmp",
+  "potential": "/ABS/PATH/TO/MoReGa.eam.fs",
+  "work_root": "runs/neb_campaign_example",
+  "data_root": ".",
+  "datasets": "NEB_new_data",
+  "pair_types": ["MoMo", "MoRe", "MoGa", "ReMo", "ReRe", "ReGa", "GaMo", "GaRe", "GaGa"],
+  "output_dir": "runs/soap_example",
+  "mae_threshold": 0.20,
+  "gate": "strict",
+  "extra_train_args": "--soap-sparse --disp-features",
+  "smoke_input": null,
+  "stages": ["s0", "s1", "s2", "s3", "s4", "s5"],
+  "notes": "Replace ABS/PATH placeholders. species/type order defines atom types 1..N; pair types are the ordered chemical pairs of the migrating dumbbell."
+}
