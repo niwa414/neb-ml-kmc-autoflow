@@ -1,0 +1,89 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: py_compile all scripts
+        run: python -m py_compile scripts/*.py examples/lj_demo/run_demo.py
+      - name: --help smoke on every stage script
+        run: |
+          set -e
+          for s in scripts/s0_doctor.py scripts/s1_draft_neb.py scripts/s2_run_neb.py \
+                   scripts/s3_ingest.py scripts/s4_train.py scripts/s5_deploy_kmc.py \
+                   scripts/run_pipeline.py; do
+            python "$s" --help >/dev/null || { echo "FAIL: $s --help"; exit 1; }
+          done
+          echo "all --help OK"
+
+  neb-demo:
+    # Real 5-replica CI-NEB on a toy LJ system. This is the canary that catches
+    # breakage in structure generation, input rendering, MPI invocation, and
+    # energy parsing. If this goes red, the pipeline does not run.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-name: ci
+          create-args: >-
+            -c conda-forge
+            python=3.11
+            lammps
+      - name: show lammps binaries
+        run: ls -la "$CONDA_PREFIX/bin/" | grep -E 'lmp|mpi' || true
+      - name: run the LJ demo end-to-end
+        run: |
+          set -e
+          LMP="$CONDA_PREFIX/bin/lmp"
+          test -x "$LMP" || LMP="$CONDA_PREFIX/bin/lmp_mpi"
+          micromamba run -n ci python examples/lj_demo/run_demo.py --lmp "$LMP"
+      - name: assert neb.txt contract
+        run: |
+          set -e
+          NEB=$(find /tmp -name neb.txt -path '*lj_demo*' | head -1)
+          test -n "$NEB" || { echo "no neb.txt produced"; exit 1; }
+          head -1 "$NEB" | grep -q 'reaction_crodinate' || { echo "bad header"; exit 1; }
+          tail -1 "$NEB" | awk '{exit ($1 == "1.000" && $2+0 < 0.5) ? 0 : 1}' \
+            || { echo "endpoint rc/dE contract broken"; exit 1; }
+          echo "neb.txt contract OK: $NEB"
+
+  draft-dryrun:
+    # Structure-generation sanity without LAMMPS: draft a ternary campaign,
+    # verify campaign.json + real data.lmp atoms land in the right layout.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: draft a MoReGa campaign (dry data.lmp, any potential path)
+        run: |
+          set -e
+          touch /tmp/dummy.eam.fs
+          python scripts/s1_draft_neb.py --species Mo,Re,Ga --concs Re_0.05 \
+            --kinds vacancy --per-cell 2 --potential /tmp/dummy.eam.fs \
+            --work-root /tmp/draft_check
+          test -f /tmp/draft_check/campaign.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          c = json.loads(Path("/tmp/draft_check/campaign.json").read_text())
+          assert len(c["tasks"]) == 18, len(c["tasks"])
+          t = c["tasks"][0]
+          wd = Path(t["workdir"])
+          head = (wd / "data.lmp").read_text().splitlines()
+          n_atoms = next(int(l.split()[0]) for l in head if l.strip().endswith("atoms"))
+          assert n_atoms == 2001, n_atoms
+          print(f"campaign OK: {len(c['tasks'])} tasks, {n_atoms} atoms each")
+          PY
